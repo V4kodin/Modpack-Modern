@@ -151,6 +151,11 @@ function registerTFGTagPrefixes(event) {
 	TagPrefix.dustTiny.setIgnored(GTMaterials.get('tfg:enriched_cr_y_residue'))
 	TagPrefix.dustTiny.setIgnored(GTMaterials.get('tfg:cr_y_residue'))
 
+	TagPrefix.dustSmall.setIgnored(GTMaterials.get('tfg:granulated_chorus'))
+	TagPrefix.dustTiny.setIgnored(GTMaterials.get('tfg:granulated_chorus'))
+	TagPrefix.nugget.setIgnored(GTMaterials.get('tfg:granulated_chorus'))
+	TagPrefix.block.setIgnored(GTMaterials.get('tfg:granulated_chorus'))
+
 	excludeAllButFlawedGem(GTMaterials.get('tfg:garnet_residual_slag'));
 	excludeAllButFlawedGem(GTMaterials.get('tfg:inert_slag'));
 
