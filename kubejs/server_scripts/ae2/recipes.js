@@ -338,6 +338,18 @@ const registerAE2Recipes = (event) => {
 	event.shapeless('ae2:light_p2p_tunnel', ['ae2:light_p2p_tunnel'])
 		.id('tfg:shapeless/light_p2p_tunnel')
 
+	// Crystal Growth Accelerator
+	event.recipes.gtceu.shaped('ae2:growth_accelerator', [
+		'ABA',
+		'CDC',
+		'ABA'
+	], {
+		A: '#forge:plates/stainless_steel',
+		B: '#forge:gems/fluix',
+		C: '#ae2:smart_cable',
+		D: '#gtceu:circuits/mv'
+	}).addMaterialInfo().id('tfg:crafting/growth_accelerator')
+
 	// ME Chest
 	event.recipes.gtceu.shaped('ae2:chest', [
 		'AEA',
