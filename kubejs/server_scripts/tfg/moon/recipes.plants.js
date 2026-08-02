@@ -11,18 +11,7 @@ function registerTFGMoonPlantRecipes(event) {
 		.EUt(2);
 
 	event.recipes.gtceu.fermenter('tfg:chorus')
-		.itemInputs('minecraft:chorus_fruit')
-		.inputFluids(Fluid.of('gtceu:biomass', 20))
-		.chancedOutput('ae2:ender_dust', 100, 0)
-		.outputFluids(Fluid.of('gtceu:nitrogen', 1000))
-		.circuit(2)
-		.duration(5 * 20)
-		.EUt(GTValues.VA[GTValues.MV])
-		.dimension('ad_astra:moon');
-
-	event.recipes.gtceu.fermenter('tfg:chorus_flower')
-		.itemInputs('tfg:lunar_chorus_flower')
-		.inputFluids(Fluid.of('gtceu:biomass', 20))
+		.itemInputs('#forge:dusts/granulated_chorus')
 		.chancedOutput('ae2:ender_dust', 100, 0)
 		.outputFluids(Fluid.of('gtceu:nitrogen', 1000))
 		.circuit(2)
