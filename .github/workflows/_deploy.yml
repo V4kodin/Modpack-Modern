@@ -70,6 +70,16 @@ jobs:
           echo "SERVER_ROOT=$root" >> "$GITHUB_ENV"
           echo "serverpack root: $root"
 
+          # the loader itself is installed by the panel, not by us, so surface the
+          # version the pack expects before the file gets pruned below
+          if [ -f "$root/forge-auto-install.txt" ]; then
+            loader=$(sed -n 's/^loaderVersion=//p' "$root/forge-auto-install.txt")
+            mc=$(sed -n 's/^minecraftVersion=//p' "$root/forge-auto-install.txt")
+            echo "PACK_LOADER=$loader" >> "$GITHUB_ENV"
+            echo "PACK_MC=$mc" >> "$GITHUB_ENV"
+            echo "pack expects Minecraft $mc with Forge $loader"
+          fi
+
           # never overwrite panel-managed files or live server state
           rm -rf \
             "$root/server.properties" \
@@ -204,4 +214,7 @@ jobs:
               echo ""
               echo "AutoModpack пересоберёт метаданные на старте, клиенты получат обновление при следующем заходе."
             fi
+            echo ""
+            echo "Пак собран под Minecraft \`$PACK_MC\` и Forge \`$PACK_LOADER\`."
+            echo "Загрузчик ставит панель, а не этот пайплайн: если версия Forge изменилась, обнови её в панели вручную."
           } >> "$GITHUB_STEP_SUMMARY"
