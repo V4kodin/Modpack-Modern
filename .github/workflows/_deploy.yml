@@ -319,8 +319,9 @@ jobs:
           bye
           PREP
 
-          # --size-only everywhere: a CI checkout gives every file a fresh mtime, so a
-          # time-based comparison would re-upload the whole mods folder on every deploy
+          # --ignore-time makes lftp compare by size alone: a CI checkout gives every
+          # file a fresh mtime, so the default size-and-time comparison would re-upload
+          # the whole mods folder on every deploy
           #
           # --delete where the repo is the only writer, omitted for config/defaultconfigs
           # because mods create their own runtime files in there
@@ -330,12 +331,12 @@ jobs:
           set net:max-retries 3
           set net:timeout 30
           set mirror:parallel-transfer-count 4
-          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/mods"           /mods
-          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/kubejs"         /kubejs
-          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/tacz"           /tacz
-          mirror -R $mode          --size-only --no-perms "$SERVER_ROOT/config"         /config
-          mirror -R $mode          --size-only --no-perms "$SERVER_ROOT/defaultconfigs" /defaultconfigs
-          mirror -R $mode --delete --size-only --no-perms ./deploy-client                /automodpack/host-modpack/main
+          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/mods"           /mods
+          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/kubejs"         /kubejs
+          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/tacz"           /tacz
+          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/config"         /config
+          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/defaultconfigs" /defaultconfigs
+          mirror -R $mode --delete --ignore-time --no-perms ./deploy-client                /automodpack/host-modpack/main
           bye
           PACK
 
