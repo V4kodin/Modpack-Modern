@@ -313,6 +313,7 @@ const registerTFGFluidTags = (event) => {
 
 	registerTFGAquaponicsFluidTags(event)
 	registerTFGPrimitiveFluidTags(event)
+	registerTFGFluidNameTags(event)
 
 	event.add('tfg:clean_water', 'minecraft:water')
 	event.add('tfg:clean_water', 'tfc:river_water')
