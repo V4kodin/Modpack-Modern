@@ -8,7 +8,6 @@
 			"createaddition:biomass_pellet", 
 			"createaddition:diamond_grit", 
 			"createaddition:biomass", 
-			"createaddition:creative_energy", 
 			"createaddition:electrum_rod", 
 			"createaddition:gold_rod", 
 			"createaddition:copper_rod", 
@@ -35,7 +34,8 @@
 			"createaddition:festive_spool", 
 			"createaddition:small_light_connector",
 			"createaddition:electrum_block",
-			"createaddition:straw"
+			"createaddition:straw",
+			"createaddition:alternator"
 		]
 	}
 ]

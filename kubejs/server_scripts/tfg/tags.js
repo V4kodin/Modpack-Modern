@@ -29,7 +29,6 @@ const registerTFGItemTags = (event) => {
 	registerTFGAquaponicsItemTags(event)
 	registerTFGMaterialItemTags(event)
 	registerTFGMaterialHiddenPipesTags(event)
-	registerTFGSlimeItemTags(event)
 	
 	// Curios slots for wearables
 	event.add("curios:face", "tfg:snorkel")
@@ -161,6 +160,8 @@ const registerTFGItemTags = (event) => {
 	
 	event.add('tfg:track_rods', '#forge:rods/long/wrought_iron')
 	event.add('tfg:track_rods', '#forge:rods/steel')
+
+	event.add('forge:torches', 'tfc:torch')
 	
 	global.TFC_WOOD_TYPES.forEach(wood => {
 		event.add('c:hidden_from_recipe_viewers', `railways:track_incomplete_tfc_${wood}`)
@@ -265,7 +266,7 @@ const registerTFGItemTags = (event) => {
 	})
 
 	event.add('tfc:usable_on_tool_rack', '#tfg:asphalt_road_stencils')
-
+	event.add('tfg:cloth_blocks', 'minecraft:white_wool')
 	event.add('minecraft:brick', 'tfg:stone_brick')
 }
 
@@ -305,6 +306,26 @@ const registerTFGBlockTags = (event) => {
 	event.add('tfg:functional_asphalt_roads', 'tfg:asphalt_road')
 	event.add('tfg:functional_asphalt_road_stairs', 'tfg:asphalt_road_stairs')
 	event.add('tfg:functional_asphalt_road_slabs', 'tfg:asphalt_road_slab')
+
+	const LOCO_GLASSES = [
+		'round_pane_locometal_window',
+		'single_pane_locometal_window',
+		'two_pane_locometal_window',
+		'four_pane_locometal_window'
+	]
+	
+	LOCO_GLASSES.forEach(type => {
+		event.add('create:wrench_pickup', `railways:${type}`)
+		event.remove('minecraft:mineable/pickaxe', `railways:${type}`)
+		event.remove('cucumber:mineable/paxel', `railways:${type}`)
+		global.LOCOMETAL_COLORS.forEach(colorObj => { 
+    		colorObj.colors.forEach(subColor => {
+            	event.add('create:wrench_pickup', `railways:${subColor}_${type}`)
+				event.remove('minecraft:mineable/pickaxe', `railways:${subColor}_${type}`)
+				event.remove('cucumber:mineable/paxel', `railways:${subColor}_${type}`)
+        	})
+    	})
+	})
 }
 //#endregion
 
@@ -405,17 +426,7 @@ const registerTFGFluidTags = (event) => {
 	event.add('tfg:oils', 'gtceu:oil_medium')
 	event.add('tfg:oils', 'gtceu:oil_heavy')
 
-	event.add('tfg:cooling_drinks', 'tfc_gourmet:kvass')
-	event.add('tfg:cooling_drinks', 'tfc_gourmet:lemonade')
-	event.add('tfg:cooling_drinks', 'tfc_gourmet:nalivka')
 	event.add('tfg:cooling_drinks', 'gtceu:ice')
-
-	event.add('tfg:warming_drinks', 'tfc_gourmet:coffee')
-	event.add('tfg:warming_drinks', 'tfc_gourmet:cocoa')
-	event.add('tfg:warming_drinks', 'tfc_gourmet:tea_mint')
-	event.add('tfg:warming_drinks', 'tfc_gourmet:tea_chamomile')
-	event.add('tfg:warming_drinks', 'tfc_gourmet:tea_nettle')
-	event.add('tfg:warming_drinks', 'tfc_gourmet:tea_rosehip')
 	event.add('tfg:warming_drinks', 'tfc:spring_water')
 
 	global.BREATHABLE_COMPRESSED_AIRS.forEach(x => {
@@ -458,7 +469,6 @@ const registerTFGBiomeTags = (event) => {
 	registerTFGMoonBiomeTags(event)
 	registerTFGMarsBiomeTags(event)
 	registerTFGVenusBiomeTags(event)
-	registerTFGSlimeBiomeTags(event)
 }
 
 function registerTFGConfiguredFeatures(event) {

@@ -101,9 +101,6 @@ const registerTFCRecipes = (event) => {
 	event.recipes.tfc.heating('tfc:plant/winged_kelp', 200)
 		.resultItem('tfc:food/dried_kelp')
 
-	// Burning Bread
-	event.recipes.tfc.heating('#tfc:foods/breads', 850)
-
 	// Soda Ash
 	event.smelting('3x tfc:powder/soda_ash', 'tfc:food/dried_seaweed').id('tfg:smelting/dried_seaweed_to_soda')
 	event.smelting('3x tfc:powder/soda_ash', 'tfc:food/dried_kelp').id('tfg:smelting/dried_kelp_to_soda')
@@ -159,12 +156,24 @@ const registerTFCRecipes = (event) => {
 		.EUt(16)
 
 	// LimeWater + Sand -> Mortar
-	event.recipes.gtceu.mixer('mortar')
+	event.recipes.gtceu.mixer('tfg:mortar_from_sand')
 		.itemInputs('#forge:sand')
 		.inputFluids(Fluid.of('tfc:limewater', 100))
 		.itemOutputs('16x tfc:mortar')
-		.duration(800)
+		.duration(600)
 		.EUt(8)
+
+	event.recipes.tfc.barrel_sealed(8000)
+		.inputs('#tfg:stone_dusts', TFC.fluidStackIngredient('tfc:limewater', 25))
+		.outputItem('tfc:mortar')
+		.id('tfg:barrel/mortar_from_dusts');
+
+	event.recipes.gtceu.mixer('tfg:mortar_from_dusts')
+		.itemInputs('#tfg:stone_dusts')
+		.inputFluids(Fluid.of('tfc:limewater', 25))
+		.itemOutputs('tfc:mortar')
+		.duration(30)
+		.EUt(8);
 
 	// Jar lids
 
@@ -307,7 +316,7 @@ const registerTFCRecipes = (event) => {
 		}).id(`tfg:shaped/tfc/${type}_krummholz`);
 	});
 
-	event.shapeless('minecraft:stick', ['tfc:groundcover/driftwood', '#forge:tools/knives'])
+	event.shapeless('minecraft:stick', ['tfc:groundcover/driftwood'])
 		.id('tfg:shapeless/driftwood_to_stick')
 
 	// Buff Lamp Glass for easier early game

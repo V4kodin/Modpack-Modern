@@ -18,9 +18,11 @@ global.MINECRAFT_HIDED_ITEMS = [
 	"minecraft:structure_block", 
 
     // unobtainable but used in worldgen
+    "minecraft:torch",
     "minecraft:lantern",
     "minecraft:raw_iron_block",
 	"minecraft:infested_deepslate",
+    "minecraft:golden_carrot",
     // unobtainable but used for recipe displays
 	"minecraft:grass_block", 
     "minecraft:furnace",
