@@ -100,12 +100,19 @@ jobs:
 
       - name: Drop projects marked export false
         run: |
-          # upstream's own filter in build.yml misses these because the mods live
-          # under .projects, not at the root of pakku.json
-          for mod in $(jq -r '.projects | to_entries[] | select(.value.export == false) | .key' pakku.json); do
-            found=$(find ./mods -maxdepth 1 -iname "${mod}*.jar" -type f -print -delete || true)
-            if [ -n "$found" ]; then echo "removed non-exported mod: $mod"; fi
-          done
+          # upstream's filter in build.yml looks under the root of pakku.json instead
+          # of .projects, and matches jar names by slug prefix, which does not hold for
+          # every mod, so resolve the real file names through the lock instead
+          jq -r --slurpfile cfg pakku.json '
+            [$cfg[0].projects | to_entries[] | select(.value.export == false) | .key] as $bad
+            | .projects[]
+            | select([(.slug // {}) | .[]] | any(IN($bad[])))
+            | .files[].file_name
+          ' pakku-lock.json | sort -u > noexport.txt
+
+          while IFS= read -r jar; do
+            if [ -n "$jar" ] && [ -f "mods/$jar" ]; then rm -v "mods/$jar"; fi
+          done < noexport.txt
 
       - name: Collect artifacts
         run: |
