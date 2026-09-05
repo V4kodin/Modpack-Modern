@@ -118,6 +118,13 @@ jobs:
           limit=$(jq -r '.attributes.feature_limits.backups // 0' server.json)
           echo "backup slots: $limit"
 
+          # this account may be a subuser rather than the owner, and every client API
+          # action is gated by its own permission, so report what the panel grants us
+          echo "server owner: $(jq -r '.attributes.server_owner // "unreported"' server.json)"
+          echo "panel-reported permissions:"
+          jq -r 'if .meta then (.meta | to_entries[] | "  \(.key) = \(.value | tostring)")
+                 else "  panel reports no meta block for this server" end' server.json
+
           # the stop logic below waits for this exact field, so make sure it parses
           # here rather than discovering it while the server is already going down
           panel state.json /resources || true
@@ -146,15 +153,31 @@ jobs:
             | "  \(.created_at[:10])  \(if .is_locked then "locked  " else "unlocked" end)"
               + "  \((.bytes / 1048576) | floor) MB  \(.name)"' backups.json
 
+          # both unlocking and deleting are gated by backup.delete, so a subuser
+          # without it fails here; report that plainly instead of a bare curl code
+          write() {
+            local method="$1" path="$2" needs="$3" code
+            code=$(curl -sS -o body.json -w '%{http_code}' -X "$method" \
+              -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+              "$PANEL/api/client/servers/$SERVER_ID$path")
+            case "$code" in
+              200|202|204) return 0 ;;
+              403) echo "::$lvl::The panel refused this action (403). The deploy account lacks the"
+                   echo "::$lvl::'$needs' permission on this server. The server owner has to grant it"
+                   echo "::$lvl::in the panel under this server's Users entry for the deploy account." ;;
+              *)   echo "::$lvl::Panel returned HTTP $code for $method $path" ;;
+            esac
+            jq -r '.errors[]?.detail // empty' body.json 2>/dev/null || head -c 300 body.json
+            return 1
+          }
+
           drop_backup() {
             # the lock endpoint is a toggle, so locked backups are unlocked first,
             # otherwise the panel refuses to delete them
             if [ "$2" = 'true' ]; then
-              curl -sS -f -X POST -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
-                "$PANEL/api/client/servers/$SERVER_ID/backups/$1/lock" > /dev/null
+              write POST "/backups/$1/lock" backup.delete || return 1
             fi
-            curl -sS -f -X DELETE -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
-              "$PANEL/api/client/servers/$SERVER_ID/backups/$1"
+            write DELETE "/backups/$1" backup.delete
           }
 
           # the pipeline holds exactly one slot: its previous pre-deploy backup is
@@ -208,7 +231,11 @@ jobs:
           fi
 
           echo "recycling the oldest unlocked backup: ${victim#* }"
-          drop_backup "$victim_uuid" false
+          if ! drop_backup "$victim_uuid" false; then
+            echo "::$lvl::No slot could be freed, so no pre-deploy backup can be taken and the"
+            echo "::$lvl::rollout is stopped before anything on the server was touched."
+            exit 1
+          fi
 
       - name: Install lftp
         if: ${{ !inputs.backup_only }}
@@ -269,12 +296,24 @@ jobs:
         if: ${{ !inputs.dry_run && !inputs.backup_only }}
         run: |
           send_signal() {
-            curl -sS -f -X POST \
+            local code needs
+            # the panel folds kill into the stop permission
+            needs="control.$1"
+            [ "$1" = 'kill' ] && needs='control.stop'
+            code=$(curl -sS -o body.json -w '%{http_code}' -X POST \
               -H "Authorization: Bearer $API_KEY" \
               -H 'Accept: application/json' \
               -H 'Content-Type: application/json' \
               -d "{\"signal\":\"$1\"}" \
-              "$PANEL/api/client/servers/$SERVER_ID/power"
+              "$PANEL/api/client/servers/$SERVER_ID/power")
+            case "$code" in
+              200|202|204) return 0 ;;
+              403) echo "::error::The panel refused to $1 the server (403). The deploy account needs"
+                   echo "::error::the '$needs' permission, granted by the server owner." ;;
+              *)   echo "::error::Panel returned HTTP $code for the $1 signal" ;;
+            esac
+            jq -r '.errors[]?.detail // empty' body.json 2>/dev/null || head -c 300 body.json
+            return 1
           }
           state() {
             curl -sS -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
@@ -320,7 +359,8 @@ jobs:
 
           uuid=$(echo "$created" | jq -r '.attributes.uuid // empty')
           if [ -z "$uuid" ]; then
-            echo "::error::Panel refused to start a backup"
+            echo "::error::Panel refused to start a backup. If the reason below is a permission"
+            echo "::error::problem, the deploy account needs 'backup.create' on this server."
             echo "$created" | jq . || echo "$created"
             exit 1
           fi
@@ -404,13 +444,25 @@ jobs:
       - name: Start server
         if: ${{ !inputs.dry_run && !inputs.backup_only }}
         run: |
-          curl -sS -f -X POST \
+          # the files are already in place, so a refused start leaves the server down
+          # and that has to be loud rather than a bare curl exit code
+          code=$(curl -sS -o body.json -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $API_KEY" \
             -H 'Accept: application/json' \
             -H 'Content-Type: application/json' \
             -d '{"signal":"start"}' \
-            "$PANEL/api/client/servers/$SERVER_ID/power"
-          echo "start signal sent"
+            "$PANEL/api/client/servers/$SERVER_ID/power")
+          case "$code" in
+            200|202|204) echo "start signal sent" ;;
+            403) echo "::error::The panel refused to start the server (403). The deploy account needs"
+                 echo "::error::the 'control.start' permission. The update is already on disk, so"
+                 echo "::error::starting the server by hand in the panel completes the rollout."
+                 jq -r '.errors[]?.detail // empty' body.json 2>/dev/null
+                 exit 1 ;;
+            *)   echo "::error::Panel returned HTTP $code for the start signal"
+                 head -c 300 body.json
+                 exit 1 ;;
+          esac
 
       - name: Summary
         if: always()
