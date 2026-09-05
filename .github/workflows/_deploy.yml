@@ -120,10 +120,31 @@ jobs:
 
           # this account may be a subuser rather than the owner, and every client API
           # action is gated by its own permission, so report what the panel grants us
-          echo "server owner: $(jq -r '.attributes.server_owner // "unreported"' server.json)"
-          echo "panel-reported permissions:"
-          jq -r 'if .meta then (.meta | to_entries[] | "  \(.key) = \(.value | tostring)")
-                 else "  panel reports no meta block for this server" end' server.json
+          echo "server owner: $(jq -r '.meta.is_server_owner // "unreported"' server.json)"
+
+          # checking the whole set up front beats discovering a missing permission
+          # halfway through, when the server is already stopped
+          if jq -e '.meta.user_permissions' server.json > /dev/null 2>&1; then
+            missing=$(jq -r '(.meta.user_permissions) as $have
+              | if ($have | index("*")) or (.meta.is_server_owner == true) then []
+                else ["backup.read", "backup.create", "backup.delete",
+                      "control.start", "control.stop", "file.sftp"]
+                     | map(. as $need | select($have | index($need) | not))
+                end
+              | join(" ")' server.json)
+          else
+            missing=''
+            echo "panel reports no permission list, skipping the preflight"
+          fi
+
+          if [ -n "$missing" ]; then
+            echo "::$lvl::The deploy account lacks these permissions on this server:"
+            echo "::$lvl::  $missing"
+            echo "::$lvl::The server owner grants them in the panel under this server's Users"
+            echo "::$lvl::entry for the deploy account. Nothing was changed on the server."
+            if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
+            exit 1
+          fi
 
           # the stop logic below waits for this exact field, so make sure it parses
           # here rather than discovering it while the server is already going down
