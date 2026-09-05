@@ -118,9 +118,22 @@ jobs:
           limit=$(jq -r '.attributes.feature_limits.backups // 0' server.json)
           echo "backup slots: $limit"
 
+          # the stop logic below waits for this exact field, so make sure it parses
+          # here rather than discovering it while the server is already going down
+          panel state.json /resources || true
+          current=$(jq -r '.attributes.current_state // "unreadable"' state.json)
+          echo "server state: $current"
+          case "$current" in
+            running|offline|starting|stopping) ;;
+            *) echo "::$lvl::Cannot read the server state from the panel, so the shutdown"
+               echo "::$lvl::before the rollout cannot be confirmed."
+               if [ "$DRY_RUN" != 'true' ]; then exit 1; fi ;;
+          esac
+
           if [ "$limit" -le 0 ]; then
-            echo "::error::This server has no backup slots, so a pre-deploy backup cannot be taken."
-            echo "::error::Raise the backup limit in the panel, then run the deploy again."
+            echo "::$lvl::This server has no backup slots, so a pre-deploy backup cannot be taken."
+            echo "::$lvl::Raise the backup limit in the panel, then run the deploy again."
+            if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
             exit 1
           fi
 
@@ -129,6 +142,11 @@ jobs:
             exit 1
           fi
           list=$(cat backups.json)
+
+          echo "existing backups:"
+          echo "$list" | jq -r '.data[].attributes
+            | "  \(.created_at[:10])  \(if .is_locked then "locked  " else "unlocked" end)"
+              + "  \((.bytes / 1048576) | floor) MB  \(.name)"'
           # the panel counts running and successful backups against the limit,
           # failed ones keep occupying a slot until they are deleted
           used=$(echo "$list" | jq '[.data[].attributes
@@ -148,8 +166,11 @@ jobs:
             | sort_by(.is_successful, .created_at) | .[0].uuid // empty')
 
           if [ -z "$victim" ]; then
-            echo "::error::All $limit backup slots are taken and none of them was made by this"
-            echo "::error::pipeline, so nothing can be recycled. Delete a backup in the panel."
+            echo "::$lvl::All $limit backup slots are taken and every one of them was made by"
+            echo "::$lvl::hand, so this pipeline has nothing of its own to recycle. Free a single"
+            echo "::$lvl::slot in the panel once: from then on the pipeline reuses that slot and"
+            echo "::$lvl::never touches the rest. Lock the backups that must survive."
+            if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
             exit 1
           fi
 
