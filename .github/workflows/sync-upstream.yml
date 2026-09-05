@@ -1,0 +1,128 @@
+name: Sync Upstream Release
+run-name: "Sync upstream into server"
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge latest upstream release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout server branch
+        uses: actions/checkout@v7
+        with:
+          ref: server
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "https://github.com/${{ vars.UPSTREAM_REPO }}.git"
+          git fetch upstream --tags --force
+
+      - name: Resolve latest upstream release
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          # releases/latest skips drafts and pre-releases, so only real releases land here
+          tag=$(gh api "repos/${{ vars.UPSTREAM_REPO }}/releases/latest" --jq .tag_name)
+          if [ -z "$tag" ]; then
+            echo "::error::Could not resolve latest upstream release" && exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release: $tag"
+
+      - name: Merge or detect conflicts
+        id: merge
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          if git merge-base --is-ancestor "$TAG" HEAD; then
+            echo "status=uptodate" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # keep the upstream tag in the fork so `git describe` can find it during release
+          git push origin "refs/tags/$TAG:refs/tags/$TAG" || true
+
+          if git merge --no-edit --no-ff "$TAG"; then
+            git push origin HEAD:server
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > conflicts.txt
+            git merge --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open conflict pull request
+        if: steps.merge.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          branch="sync/upstream-$TAG"
+          git push origin "refs/tags/$TAG:refs/heads/$branch" --force
+
+          # --repo is mandatory: inside a fork these commands otherwise target the parent repo
+          gh label create conflict --color d73a4a \
+            --description "Upstream merge needs manual resolution" --repo "$REPO" 2>/dev/null || true
+
+          existing=$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq '.[].number')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for $branch, nothing to do"
+            exit 0
+          fi
+
+          {
+            echo "@V4kodin автомерж релиза апстрима \`$TAG\` не прошёл, конфликты нужно разрешить руками."
+            echo ""
+            echo "Конфликтные файлы:"
+            echo '```'
+            cat conflicts.txt
+            echo '```'
+            echo ""
+            echo "Разрешить локально:"
+            echo '```bash'
+            echo "git switch server"
+            echo "git fetch origin --tags"
+            echo "git merge $TAG"
+            echo "# разрешить конфликты, затем"
+            echo "git commit && git push origin server"
+            echo '```'
+            echo ""
+            echo "После мержа запустить workflow **Release & Deploy**."
+          } > pr-body.md
+
+          gh pr create --repo "$REPO" --base server --head "$branch" \
+            --title "Sync upstream $TAG (конфликты)" \
+            --label conflict \
+            --body-file pr-body.md
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          STATUS: ${{ steps.merge.outputs.status }}
+        run: |
+          case "$STATUS" in
+            uptodate) echo "Upstream \`$TAG\` уже влит в \`server\`, делать нечего." >> "$GITHUB_STEP_SUMMARY" ;;
+            merged)   echo "Upstream \`$TAG\` влит в \`server\` без конфликтов. Можно запускать **Release & Deploy**." >> "$GITHUB_STEP_SUMMARY" ;;
+            conflict) echo "Upstream \`$TAG\` конфликтует с \`server\`, открыт PR с меткой \`conflict\`." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac

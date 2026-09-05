@@ -1,0 +1,43 @@
+name: Release & Deploy
+run-name: "Release & Deploy (client=${{ inputs.publish_client }}, server=${{ inputs.deploy_server }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_client:
+        description: 'Выложить релиз для клиентов (.mrpack)'
+        type: boolean
+        default: true
+      deploy_server:
+        description: 'Раскатать на игровой сервер'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Пробный прогон: собрать, но на сервер ничего не заливать'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-and-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/_build-release.yml
+    with:
+      publish_client: ${{ inputs.publish_client }}
+    secrets: inherit
+
+  deploy:
+    name: Deploy
+    needs: build
+    if: ${{ inputs.deploy_server }}
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      release: ${{ needs.build.outputs.version }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit

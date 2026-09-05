@@ -1,0 +1,193 @@
+name: Deploy to Server
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: 'Release tag to deploy, or "latest"'
+        type: string
+        default: latest
+      dry_run:
+        description: 'Only report what would change, touch nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Sync release to game server
+    runs-on: ubuntu-latest
+    env:
+      PANEL: ${{ vars.PANEL_URL }}
+      SERVER_ID: ${{ vars.PANEL_SERVER_ID }}
+      API_KEY: ${{ secrets.PANEL_API_KEY }}
+      SFTP_HOST: ${{ vars.SFTP_HOST }}
+      SFTP_PORT: ${{ vars.SFTP_PORT }}
+      SFTP_USER: ${{ vars.SFTP_USER }}
+      SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Install lftp
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          mkdir -p assets
+          if [ "$RELEASE" = 'latest' ]; then
+            tag=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName')
+          else
+            tag="$RELEASE"
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::Could not resolve a release to deploy" && exit 1
+          fi
+          echo "DEPLOY_TAG=$tag" >> "$GITHUB_ENV"
+          echo "Deploying release $tag"
+
+          gh release download "$tag" --repo "$REPO" --dir assets \
+            --pattern '*serverpack.zip' --pattern '*clientextra.zip'
+          ls -lh assets/
+
+      - name: Unpack and prune protected files
+        run: |
+          mkdir -p deploy deploy-client
+          unzip -q assets/*serverpack.zip -d deploy
+          unzip -q assets/*clientextra.zip -d deploy-client
+
+          # the serverpack may or may not wrap its contents in a folder
+          root=$(dirname "$(find deploy -maxdepth 3 -type d -name mods | head -n1)")
+          if [ -z "$root" ] || [ "$root" = '.' ]; then
+            echo "::error::Could not locate the mods folder inside the serverpack" && exit 1
+          fi
+          echo "SERVER_ROOT=$root" >> "$GITHUB_ENV"
+          echo "serverpack root: $root"
+
+          # never overwrite panel-managed files or live server state
+          rm -rf \
+            "$root/server.properties" \
+            "$root/eula.txt" \
+            "$root/start_server.sh" \
+            "$root/start_server.bat" \
+            "$root/forge-auto-install.txt" \
+            "$root/server_starter.conf" \
+            "$root/DiscordIntegration-Data" \
+            "$root/config/Discord-Integration.toml"
+
+          du -sh "$root" deploy-client
+
+      - name: Create panel backup
+        if: ${{ !inputs.dry_run }}
+        run: |
+          code=$(curl -sS -o backup.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $API_KEY" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d "{\"name\":\"pre-deploy $DEPLOY_TAG\"}" \
+            "$PANEL/api/client/servers/$SERVER_ID/backups")
+          if [ "$code" != '200' ] && [ "$code" != '204' ]; then
+            echo "::warning::Backup request returned HTTP $code, continuing anyway"
+            cat backup.json || true
+          else
+            echo "Backup created"
+          fi
+
+      - name: Stop server
+        if: ${{ !inputs.dry_run }}
+        run: |
+          send_signal() {
+            curl -sS -f -X POST \
+              -H "Authorization: Bearer $API_KEY" \
+              -H 'Accept: application/json' \
+              -H 'Content-Type: application/json' \
+              -d "{\"signal\":\"$1\"}" \
+              "$PANEL/api/client/servers/$SERVER_ID/power"
+          }
+          state() {
+            curl -sS -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+              "$PANEL/api/client/servers/$SERVER_ID/resources" | jq -r '.attributes.current_state'
+          }
+
+          echo "current state: $(state)"
+          send_signal stop
+
+          for i in $(seq 1 24); do
+            sleep 5
+            s=$(state)
+            echo "  [$i] $s"
+            if [ "$s" = 'offline' ]; then
+              echo "server is offline"
+              exit 0
+            fi
+          done
+
+          echo "::warning::Server did not stop within 120s, sending kill"
+          send_signal kill
+          sleep 10
+          if [ "$(state)" != 'offline' ]; then
+            echo "::error::Server is still not offline, aborting before touching files" && exit 1
+          fi
+
+      - name: Sync files over SFTP
+        run: |
+          if [ "$DRY_RUN" = 'true' ]; then
+            mode='--dry-run'
+            echo "dry run: nothing will be written"
+          else
+            mode=''
+          fi
+
+          # host-modpack may not exist yet; failures here are not fatal
+          lftp -u "$SFTP_USER,$SFTP_PASSWORD" "sftp://$SFTP_HOST:$SFTP_PORT" <<'PREP' || true
+          set sftp:auto-confirm yes
+          mkdir -p /automodpack/host-modpack/main
+          bye
+          PREP
+
+          # --delete where the repo is the sole source of truth (mods, scripts, host-modpack)
+          # no --delete for config/defaultconfigs: mods write their own runtime files there
+          lftp -u "$SFTP_USER,$SFTP_PASSWORD" "sftp://$SFTP_HOST:$SFTP_PORT" <<PACK
+          set sftp:auto-confirm yes
+          set cmd:fail-exit yes
+          set net:max-retries 3
+          set net:timeout 30
+          set mirror:parallel-transfer-count 4
+          mirror -R $mode --delete --size-only  --no-perms "$SERVER_ROOT/mods"           /mods
+          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/kubejs"         /kubejs
+          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/tacz"           /tacz
+          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/config"         /config
+          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/defaultconfigs" /defaultconfigs
+          mirror -R $mode --delete --size-only  --no-perms ./deploy-client                /automodpack/host-modpack/main
+          bye
+          PACK
+
+      - name: Start server
+        if: ${{ !inputs.dry_run }}
+        run: |
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer $API_KEY" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d '{"signal":"start"}' \
+            "$PANEL/api/client/servers/$SERVER_ID/power"
+          echo "start signal sent"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "Пробный прогон деплоя релиза \`$DEPLOY_TAG\`, на сервер ничего не заливалось."
+            else
+              echo "Релиз \`$DEPLOY_TAG\` выложен на сервер, сервер перезапущен."
+              echo ""
+              echo "AutoModpack пересоберёт метаданные на старте, клиенты получат обновление при следующем заходе."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
