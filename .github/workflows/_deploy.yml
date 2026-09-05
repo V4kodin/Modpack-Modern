@@ -11,6 +11,25 @@ on:
         description: 'Only report what would change, touch nothing'
         type: boolean
         default: false
+      backup_only:
+        description: 'Just take a panel backup and stop, deploy nothing'
+        type: boolean
+        default: false
+  # also dispatchable on its own, to deploy an existing release or to take a backup
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Тег релиза или latest'
+        type: string
+        default: latest
+      dry_run:
+        description: 'Пробный прогон: ничего не менять на сервере'
+        type: boolean
+        default: false
+      backup_only:
+        description: 'Только снять бэкап, ничего не раскатывать'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,19 +47,24 @@ jobs:
       SFTP_USER: ${{ vars.SFTP_USER }}
       SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
       DRY_RUN: ${{ inputs.dry_run }}
+      BACKUP_ONLY: ${{ inputs.backup_only }}
+      # backups are the safety net for a bad rollout, so they must stay restorable:
+      # only genuinely worthless paths are skipped, including the backups another
+      # mod writes itself, which would otherwise be counted twice
+      BACKUP_IGNORED: |
+        /logs
+        /crash-reports
+        /backups
+        /cache
+        *.log
+        *.log.gz
     steps:
-      - name: Install lftp
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq lftp
-
-      - name: Download release assets
+      - name: Resolve release tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           RELEASE: ${{ inputs.release }}
         run: |
-          mkdir -p assets
           if [ "$RELEASE" = 'latest' ]; then
             tag=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName')
           else
@@ -50,13 +74,77 @@ jobs:
             echo "::error::Could not resolve a release to deploy" && exit 1
           fi
           echo "DEPLOY_TAG=$tag" >> "$GITHUB_ENV"
-          echo "Deploying release $tag"
+          echo "Release: $tag"
 
-          gh release download "$tag" --repo "$REPO" --dir assets \
+      - name: Check backup capacity
+        run: |
+          # read only, so this also runs during a dry run and verifies that the API
+          # key works and carries the backup permissions
+          info=$(curl -sS -f -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+            "$PANEL/api/client/servers/$SERVER_ID")
+          limit=$(echo "$info" | jq -r '.attributes.feature_limits.backups // 0')
+          echo "backup slots: $limit"
+
+          if [ "$limit" -le 0 ]; then
+            echo "::error::This server has no backup slots, so a pre-deploy backup cannot be taken."
+            echo "::error::Raise the backup limit in the panel, then run the deploy again."
+            exit 1
+          fi
+
+          list=$(curl -sS -f -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+            "$PANEL/api/client/servers/$SERVER_ID/backups")
+          # the panel counts running and successful backups against the limit,
+          # failed ones keep occupying a slot until they are deleted
+          used=$(echo "$list" | jq '[.data[].attributes
+            | select(.completed_at == null or .is_successful == true)] | length')
+          echo "backup slots in use: $used"
+
+          if [ "$used" -lt "$limit" ]; then
+            exit 0
+          fi
+
+          # only ever recycle backups this pipeline made, never a manual one, and
+          # spend the failed ones first because they hold no restorable data
+          victim=$(echo "$list" | jq -r '[.data[].attributes
+            | select(.is_locked == false)
+            | select(.completed_at != null)
+            | select((.name // "") | startswith("pre-deploy "))]
+            | sort_by(.is_successful, .created_at) | .[0].uuid // empty')
+
+          if [ -z "$victim" ]; then
+            echo "::error::All $limit backup slots are taken and none of them was made by this"
+            echo "::error::pipeline, so nothing can be recycled. Delete a backup in the panel."
+            exit 1
+          fi
+
+          if [ "$DRY_RUN" = 'true' ]; then
+            echo "dry run: would delete backup $victim to free a slot"
+            exit 0
+          fi
+
+          echo "deleting oldest pipeline backup $victim to free a slot"
+          curl -sS -f -X DELETE -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+            "$PANEL/api/client/servers/$SERVER_ID/backups/$victim"
+
+      - name: Install lftp
+        if: ${{ !inputs.backup_only }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+
+      - name: Download release assets
+        if: ${{ !inputs.backup_only }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p assets
+          gh release download "$DEPLOY_TAG" --repo "$REPO" --dir assets \
             --pattern '*serverpack.zip' --pattern '*clientextra.zip'
           ls -lh assets/
 
       - name: Unpack and prune protected files
+        if: ${{ !inputs.backup_only }}
         run: |
           mkdir -p deploy deploy-client
           unzip -q assets/*serverpack.zip -d deploy
@@ -93,24 +181,8 @@ jobs:
 
           du -sh "$root" deploy-client
 
-      - name: Create panel backup
-        if: ${{ !inputs.dry_run }}
-        run: |
-          code=$(curl -sS -o backup.json -w '%{http_code}' -X POST \
-            -H "Authorization: Bearer $API_KEY" \
-            -H 'Accept: application/json' \
-            -H 'Content-Type: application/json' \
-            -d "{\"name\":\"pre-deploy $DEPLOY_TAG\"}" \
-            "$PANEL/api/client/servers/$SERVER_ID/backups")
-          if [ "$code" != '200' ] && [ "$code" != '204' ]; then
-            echo "::warning::Backup request returned HTTP $code, continuing anyway"
-            cat backup.json || true
-          else
-            echo "Backup created"
-          fi
-
       - name: Stop server
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.backup_only }}
         run: |
           send_signal() {
             curl -sS -f -X POST \
@@ -145,7 +217,57 @@ jobs:
             echo "::error::Server is still not offline, aborting before touching files" && exit 1
           fi
 
+      - name: Back up the server
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # runs after the shutdown, so the archive holds a quiet world with no
+          # half-written region files, and it is a hard gate: no backup, no rollout
+          body=$(jq -n --arg name "pre-deploy $DEPLOY_TAG" --arg ignored "$BACKUP_IGNORED" \
+            '{name: $name, ignored: $ignored, is_locked: false}')
+
+          created=$(curl -sS -X POST \
+            -H "Authorization: Bearer $API_KEY" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d "$body" \
+            "$PANEL/api/client/servers/$SERVER_ID/backups")
+
+          uuid=$(echo "$created" | jq -r '.attributes.uuid // empty')
+          if [ -z "$uuid" ]; then
+            echo "::error::Panel refused to start a backup"
+            echo "$created" | jq . || echo "$created"
+            exit 1
+          fi
+          echo "backup $uuid started, waiting for it to finish"
+
+          # a full modpack server takes a while to archive, so allow 30 minutes
+          for i in $(seq 1 180); do
+            sleep 10
+            info=$(curl -sS -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+              "$PANEL/api/client/servers/$SERVER_ID/backups/$uuid")
+            finished=$(echo "$info" | jq -r '.attributes.completed_at // empty')
+
+            if [ -z "$finished" ]; then
+              if [ $((i % 6)) -eq 0 ]; then echo "  still running (${i}0s)"; fi
+              continue
+            fi
+
+            if [ "$(echo "$info" | jq -r '.attributes.is_successful')" != 'true' ]; then
+              echo "::error::Backup $uuid finished but failed, not deploying"
+              exit 1
+            fi
+
+            size=$(echo "$info" | jq -r '(.attributes.bytes / 1048576) | floor')
+            echo "backup finished: ${size} MB"
+            echo "BACKUP_INFO=${uuid} (${size} MB)" >> "$GITHUB_ENV"
+            exit 0
+          done
+
+          echo "::error::Backup did not finish within 30 minutes, not deploying"
+          exit 1
+
       - name: Sync files over SFTP
+        if: ${{ !inputs.backup_only }}
         run: |
           if [ "$DRY_RUN" = 'true' ]; then
             mode='--dry-run'
@@ -193,7 +315,7 @@ jobs:
           fi
 
       - name: Start server
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.backup_only }}
         run: |
           curl -sS -f -X POST \
             -H "Authorization: Bearer $API_KEY" \
@@ -207,14 +329,21 @@ jobs:
         if: always()
         run: |
           {
-            if [ "$DRY_RUN" = 'true' ]; then
-              echo "Пробный прогон деплоя релиза \`$DEPLOY_TAG\`, на сервер ничего не заливалось."
+            if [ -n "$BACKUP_INFO" ]; then
+              echo "Бэкап перед раскаткой снят: \`$BACKUP_INFO\`."
+              echo ""
+            fi
+
+            if [ "$BACKUP_ONLY" = 'true' ]; then
+              echo "Режим «только бэкап»: на сервер ничего не заливалось."
+            elif [ "$DRY_RUN" = 'true' ]; then
+              echo "Пробный прогон релиза \`$DEPLOY_TAG\`: бэкап не снимался, на сервер ничего не заливалось."
             else
               echo "Релиз \`$DEPLOY_TAG\` выложен на сервер, сервер перезапущен."
               echo ""
               echo "AutoModpack пересоберёт метаданные на старте, клиенты получат обновление при следующем заходе."
+              echo ""
+              echo "Пак собран под Minecraft \`$PACK_MC\` и Forge \`$PACK_LOADER\`."
+              echo "Загрузчик ставит панель, а не этот пайплайн: если версия Forge изменилась, обнови её в панели вручную."
             fi
-            echo ""
-            echo "Пак собран под Minecraft \`$PACK_MC\` и Forge \`$PACK_LOADER\`."
-            echo "Загрузчик ставит панель, а не этот пайплайн: если версия Forge изменилась, обнови её в панели вручную."
           } >> "$GITHUB_STEP_SUMMARY"
