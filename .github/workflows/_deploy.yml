@@ -120,7 +120,9 @@ jobs:
 
           # this account may be a subuser rather than the owner, and every client API
           # action is gated by its own permission, so report what the panel grants us
-          echo "server owner: $(jq -r '.meta.is_server_owner // "unreported"' server.json)"
+          # a plain // would swallow a legitimate false here
+          echo "server owner: $(jq -r '.meta.is_server_owner
+            | if . == null then "unreported" else tostring end' server.json)"
 
           # checking the whole set up front beats discovering a missing permission
           # halfway through, when the server is already stopped
