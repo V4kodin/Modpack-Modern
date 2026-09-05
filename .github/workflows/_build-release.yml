@@ -108,28 +108,43 @@ jobs:
           done
 
       - name: Collect artifacts
-        id: collect
         run: |
-          mkdir -p out work/serverpack work/clientextra/mods
+          mkdir -p out work/clientextra/mods work/cfpack
 
           cp build/serverpack/*.zip "out/${SERVERPACK_NAME}"
           cp build/modrinth/*.mrpack "out/${MRPACK_NAME}"
 
-          # client-only jars = everything pakku downloaded minus what the serverpack ships
-          unzip -q "out/${SERVERPACK_NAME}" -d work/serverpack
-          find work/serverpack/mods -maxdepth 1 -name '*.jar' -printf '%f\n' 2>/dev/null | sort > work/server-mods.txt
-          find ./mods -maxdepth 1 -name '*.jar' -printf '%f\n' | sort > work/all-mods.txt
-          comm -23 work/all-mods.txt work/server-mods.txt > work/client-mods.txt
+          # clientextra becomes AutoModpack's host-modpack, so it has to hold the
+          # complete client-side file set: AutoModpack cannot detect mod sides on
+          # Forge, so we go by pakku's own side data instead of letting it guess
+          {
+            jq -r '.projects[] | select(.side == "SERVER") | .files[].file_name' pakku-lock.json
+            # AutoModpack updates its own jar outside the modpack
+            jq -r '.projects[] | select(.slug.modrinth == "automodpack") | .files[].file_name' pakku-lock.json
+          } | sort -u > work/excluded-mods.txt
 
-          echo "client-only mods: $(wc -l < work/client-mods.txt)"
+          find ./mods -maxdepth 1 -name '*.jar' -printf '%f\n' | sort > work/all-mods.txt
+          comm -23 work/all-mods.txt work/excluded-mods.txt > work/client-mods.txt
+          echo "mods: $(wc -l < work/all-mods.txt) fetched, $(wc -l < work/client-mods.txt) for clients"
+
           while IFS= read -r jar; do
             [ -n "$jar" ] && cp "mods/$jar" work/clientextra/mods/
           done < work/client-mods.txt
 
-          # client-side overrides, already merged by pakku (includes .pakku/client-overrides)
-          cp -r build/.cache/curseforge/overrides/. work/clientextra/
-          ( cd work/clientextra && zip -qr "../../out/${CLIENTEXTRA_NAME}" . )
+          # resource packs and shaders are pakku projects rather than overrides, so
+          # they are not part of the exported overrides and come from the fetch output
+          for dir in resourcepacks shaderpacks; do
+            if [ -d "$dir" ]; then cp -r "$dir" work/clientextra/; fi
+          done
 
+          # client flavour of config/defaultconfigs/kubejs/tacz, as pakku merged it
+          unzip -q build/curseforge/*.zip -d work/cfpack
+          if [ ! -d work/cfpack/overrides ]; then
+            echo "::error::CurseForge export contains no overrides folder" && exit 1
+          fi
+          cp -r work/cfpack/overrides/. work/clientextra/
+
+          ( cd work/clientextra && zip -qr "../../out/${CLIENTEXTRA_NAME}" . )
           ls -lh out/
 
       - name: Publish release

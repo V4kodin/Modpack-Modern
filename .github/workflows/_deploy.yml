@@ -151,22 +151,36 @@ jobs:
           bye
           PREP
 
-          # --delete where the repo is the sole source of truth (mods, scripts, host-modpack)
-          # no --delete for config/defaultconfigs: mods write their own runtime files there
+          # --size-only everywhere: a CI checkout gives every file a fresh mtime, so a
+          # time-based comparison would re-upload the whole mods folder on every deploy
+          #
+          # --delete where the repo is the only writer, omitted for config/defaultconfigs
+          # because mods create their own runtime files in there
           lftp -u "$SFTP_USER,$SFTP_PASSWORD" "sftp://$SFTP_HOST:$SFTP_PORT" <<PACK
           set sftp:auto-confirm yes
           set cmd:fail-exit yes
           set net:max-retries 3
           set net:timeout 30
           set mirror:parallel-transfer-count 4
-          mirror -R $mode --delete --size-only  --no-perms "$SERVER_ROOT/mods"           /mods
-          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/kubejs"         /kubejs
-          mirror -R $mode --delete --ignore-time --no-perms "$SERVER_ROOT/tacz"           /tacz
-          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/config"         /config
-          mirror -R $mode          --ignore-time --no-perms "$SERVER_ROOT/defaultconfigs" /defaultconfigs
-          mirror -R $mode --delete --size-only  --no-perms ./deploy-client                /automodpack/host-modpack/main
+          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/mods"           /mods
+          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/kubejs"         /kubejs
+          mirror -R $mode --delete --size-only --no-perms "$SERVER_ROOT/tacz"           /tacz
+          mirror -R $mode          --size-only --no-perms "$SERVER_ROOT/config"         /config
+          mirror -R $mode          --size-only --no-perms "$SERVER_ROOT/defaultconfigs" /defaultconfigs
+          mirror -R $mode --delete --size-only --no-perms ./deploy-client                /automodpack/host-modpack/main
           bye
           PACK
+
+          # the AutoModpack config is small and version controlled, so always overwrite it
+          # rather than relying on a size comparison
+          if [ "$DRY_RUN" != 'true' ]; then
+            lftp -u "$SFTP_USER,$SFTP_PASSWORD" "sftp://$SFTP_HOST:$SFTP_PORT" <<AMP
+          set sftp:auto-confirm yes
+          set cmd:fail-exit yes
+          put -O /automodpack "$SERVER_ROOT/automodpack/automodpack-server.json"
+          bye
+          AMP
+          fi
 
       - name: Start server
         if: ${{ !inputs.dry_run }}

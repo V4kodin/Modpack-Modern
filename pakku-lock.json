@@ -8,124 +8,6 @@
     },
     "projects": [
         {
-            "pakku_id": "r8daZddpyifjyuKl",
-            "type": "MOD",
-            "side": "BOTH",
-            "slug": {
-                "modrinth": "eup2p"
-            },
-            "name": {
-                "modrinth": "EU P2P Tunnel"
-            },
-            "id": {
-                "modrinth": "yoL9UPAM"
-            },
-            "files": [
-                {
-                    "type": "modrinth",
-                    "file_name": "eup2p-1.20.1-2.0.4.jar",
-                    "mc_versions": [
-                        "1.20.1"
-                    ],
-                    "loaders": [
-                        "forge"
-                    ],
-                    "release_type": "release",
-                    "url": "https://cdn.modrinth.com/data/yoL9UPAM/versions/oytfPJqv/eup2p-1.20.1-2.0.4.jar",
-                    "id": "oytfPJqv",
-                    "parent_id": "yoL9UPAM",
-                    "hashes": {
-                        "sha512": "cb7ca3bcbefe39c833bac2f63bc26f7ab0ba105a3202bda2f2e1844823e49d6fe6ef0cc561e8b46535688c0f1cfc4ba60057b39bb1219b4097d2fc4a90ab4f7d",
-                        "sha1": "cd2b2d702c0a984a3edc7b6ae87418630038e30a"
-                    },
-                    "required_dependencies": [],
-                    "size": 34066,
-                    "date_published": "2026-04-19T07:48:37.122115Z"
-                }
-            ]
-        },
-        {
-            "pakku_id": "QRIcKbAZdEhH4SbZ",
-            "type": "MOD",
-            "side": "BOTH",
-            "slug": {
-                "modrinth": "modern-ae2-additions"
-            },
-            "name": {
-                "modrinth": "Modern AE2 Additions"
-            },
-            "id": {
-                "modrinth": "5G4fpXXj"
-            },
-            "files": [
-                {
-                    "type": "modrinth",
-                    "file_name": "mae2-2.0.0.jar",
-                    "mc_versions": [
-                        "1.20.1"
-                    ],
-                    "loaders": [
-                        "forge"
-                    ],
-                    "release_type": "release",
-                    "url": "https://cdn.modrinth.com/data/5G4fpXXj/versions/WIepcqPc/mae2-2.0.0.jar",
-                    "id": "WIepcqPc",
-                    "parent_id": "5G4fpXXj",
-                    "hashes": {
-                        "sha512": "6586022771baae3927d781150febc30ff08152704a6836b32685eb4cbce7df79061f06861cab1c6e7cbd8633c4fd396d51bf5027f16b18bb58685e51100fb66e",
-                        "sha1": "c550456ad95c32a790b4b6876d9cfc4dbc1c17b3"
-                    },
-                    "required_dependencies": [
-                        "XxWD5pD3"
-                    ],
-                    "size": 437914,
-                    "date_published": "2026-03-11T03:00:13.316114Z"
-                }
-            ]
-        },
-        {
-            "pakku_id": "shPQrEy01ZEgwJGn",
-            "type": "MOD",
-            "side": "BOTH",
-            "slug": {
-                "modrinth": "programmed-circuit-card"
-            },
-            "name": {
-                "modrinth": "Programmed Circuit Card"
-            },
-            "id": {
-                "modrinth": "C3Mtqx9z"
-            },
-            "files": [
-                {
-                    "type": "modrinth",
-                    "file_name": "Programmed Circuit Card-1.20.1-1.3.1.jar",
-                    "mc_versions": [
-                        "1.20.1"
-                    ],
-                    "loaders": [
-                        "forge",
-                        "neoforge"
-                    ],
-                    "release_type": "release",
-                    "url": "https://cdn.modrinth.com/data/C3Mtqx9z/versions/ZMO1PPxN/Programmed Circuit Card-1.20.1-1.3.1.jar",
-                    "id": "ZMO1PPxN",
-                    "parent_id": "C3Mtqx9z",
-                    "hashes": {
-                        "sha512": "beebc226d8365ea22dc5310c9924da95d6fc5a9505ee4ac782e811fec23f9ee3acb11e506b696413243ae4f4e8b9cc714bc53f18d7558792efc80437e02addd1",
-                        "sha1": "14667353e073c0daa77848476e6037e3e896ab95"
-                    },
-                    "required_dependencies": [
-                        "7tG215v7",
-                        "XxWD5pD3",
-                        "Ck4E7v7R"
-                    ],
-                    "size": 737989,
-                    "date_published": "2026-08-02T08:53:57.556683Z"
-                }
-            ]
-        },
-        {
             "pakku_id": "3R5XMmWw1kZCzgnB",
             "type": "MOD",
             "side": "BOTH",
@@ -1648,6 +1530,44 @@
                     "required_dependencies": [],
                     "size": 19499,
                     "date_published": "2026-02-12T01:13:50.526585Z"
+                }
+            ]
+        },
+        {
+            "pakku_id": "1afedHoPxUKHIclt",
+            "type": "MOD",
+            "side": "BOTH",
+            "slug": {
+                "modrinth": "automodpack"
+            },
+            "name": {
+                "modrinth": "AutoModpack"
+            },
+            "id": {
+                "modrinth": "k68glP2e"
+            },
+            "files": [
+                {
+                    "type": "modrinth",
+                    "file_name": "automodpack-mc1.20.1-forge-4.0.6.jar",
+                    "mc_versions": [
+                        "1.20",
+                        "1.20.1"
+                    ],
+                    "loaders": [
+                        "forge"
+                    ],
+                    "release_type": "release",
+                    "url": "https://cdn.modrinth.com/data/k68glP2e/versions/MJclhoqa/automodpack-mc1.20.1-forge-4.0.6.jar",
+                    "id": "MJclhoqa",
+                    "parent_id": "k68glP2e",
+                    "hashes": {
+                        "sha512": "9636925fc6b99562b12cf45154542341bc90cb0d9aad89bf3a38120df9d5276d8d014e8ce31413d3fd681f9aecb2e7f911f028034b1c69fcd5d1d0024a5d3e60",
+                        "sha1": "ed070a1bcfde5c7c56b30893e772847bf87643ef"
+                    },
+                    "required_dependencies": [],
+                    "size": 15395275,
+                    "date_published": "2026-08-09T03:39:19.031489Z"
                 }
             ]
         },
@@ -5861,6 +5781,43 @@
                     "required_dependencies": [],
                     "size": 1121750,
                     "date_published": "2026-05-13T06:18:18.303Z"
+                }
+            ]
+        },
+        {
+            "pakku_id": "r8daZddpyifjyuKl",
+            "type": "MOD",
+            "side": "BOTH",
+            "slug": {
+                "modrinth": "eup2p"
+            },
+            "name": {
+                "modrinth": "EU P2P Tunnel"
+            },
+            "id": {
+                "modrinth": "yoL9UPAM"
+            },
+            "files": [
+                {
+                    "type": "modrinth",
+                    "file_name": "eup2p-1.20.1-2.0.4.jar",
+                    "mc_versions": [
+                        "1.20.1"
+                    ],
+                    "loaders": [
+                        "forge"
+                    ],
+                    "release_type": "release",
+                    "url": "https://cdn.modrinth.com/data/yoL9UPAM/versions/oytfPJqv/eup2p-1.20.1-2.0.4.jar",
+                    "id": "oytfPJqv",
+                    "parent_id": "yoL9UPAM",
+                    "hashes": {
+                        "sha512": "cb7ca3bcbefe39c833bac2f63bc26f7ab0ba105a3202bda2f2e1844823e49d6fe6ef0cc561e8b46535688c0f1cfc4ba60057b39bb1219b4097d2fc4a90ab4f7d",
+                        "sha1": "cd2b2d702c0a984a3edc7b6ae87418630038e30a"
+                    },
+                    "required_dependencies": [],
+                    "size": 34066,
+                    "date_published": "2026-04-19T07:48:37.122115Z"
                 }
             ]
         },
@@ -11340,6 +11297,45 @@
             ]
         },
         {
+            "pakku_id": "QRIcKbAZdEhH4SbZ",
+            "type": "MOD",
+            "side": "BOTH",
+            "slug": {
+                "modrinth": "modern-ae2-additions"
+            },
+            "name": {
+                "modrinth": "Modern AE2 Additions"
+            },
+            "id": {
+                "modrinth": "5G4fpXXj"
+            },
+            "files": [
+                {
+                    "type": "modrinth",
+                    "file_name": "mae2-2.0.0.jar",
+                    "mc_versions": [
+                        "1.20.1"
+                    ],
+                    "loaders": [
+                        "forge"
+                    ],
+                    "release_type": "release",
+                    "url": "https://cdn.modrinth.com/data/5G4fpXXj/versions/WIepcqPc/mae2-2.0.0.jar",
+                    "id": "WIepcqPc",
+                    "parent_id": "5G4fpXXj",
+                    "hashes": {
+                        "sha512": "6586022771baae3927d781150febc30ff08152704a6836b32685eb4cbce7df79061f06861cab1c6e7cbd8633c4fd396d51bf5027f16b18bb58685e51100fb66e",
+                        "sha1": "c550456ad95c32a790b4b6876d9cfc4dbc1c17b3"
+                    },
+                    "required_dependencies": [
+                        "XxWD5pD3"
+                    ],
+                    "size": 437914,
+                    "date_published": "2026-03-11T03:00:13.316114Z"
+                }
+            ]
+        },
+        {
             "pakku_id": "lVUKSWXoUNMWdo6W",
             "type": "RESOURCE_PACK",
             "slug": {
@@ -13062,6 +13058,48 @@
                     ],
                     "size": 2365466,
                     "date_published": "2024-04-01T14:08:56.003Z"
+                }
+            ]
+        },
+        {
+            "pakku_id": "shPQrEy01ZEgwJGn",
+            "type": "MOD",
+            "side": "BOTH",
+            "slug": {
+                "modrinth": "programmed-circuit-card"
+            },
+            "name": {
+                "modrinth": "Programmed Circuit Card"
+            },
+            "id": {
+                "modrinth": "C3Mtqx9z"
+            },
+            "files": [
+                {
+                    "type": "modrinth",
+                    "file_name": "Programmed Circuit Card-1.20.1-1.3.1.jar",
+                    "mc_versions": [
+                        "1.20.1"
+                    ],
+                    "loaders": [
+                        "forge",
+                        "neoforge"
+                    ],
+                    "release_type": "release",
+                    "url": "https://cdn.modrinth.com/data/C3Mtqx9z/versions/ZMO1PPxN/Programmed Circuit Card-1.20.1-1.3.1.jar",
+                    "id": "ZMO1PPxN",
+                    "parent_id": "C3Mtqx9z",
+                    "hashes": {
+                        "sha512": "beebc226d8365ea22dc5310c9924da95d6fc5a9505ee4ac782e811fec23f9ee3acb11e506b696413243ae4f4e8b9cc714bc53f18d7558792efc80437e02addd1",
+                        "sha1": "14667353e073c0daa77848476e6037e3e896ab95"
+                    },
+                    "required_dependencies": [
+                        "7tG215v7",
+                        "XxWD5pD3",
+                        "Ck4E7v7R"
+                    ],
+                    "size": 737989,
+                    "date_published": "2026-08-02T08:53:57.556683Z"
                 }
             ]
         },
