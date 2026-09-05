@@ -84,7 +84,9 @@ jobs:
             sed -i "s/LOADER_VERSION/${LOADER_VERSION}/g;s/LOADER_TYPE/${LOADER_TYPE}/g;s/MINECRAFT_VERSION/${MC}/g" "$f"
           done
 
-          cp -f config/fancymenu/assets/icons/icon32x32.png .pakku/server-overrides/server-icon.png
+          # Minecraft only accepts a 64x64 server-icon.png and rejects anything else,
+          # upstream ships the 32x32 icon here, which is why the icon never worked
+          cp -f config/fancymenu/assets/icons/icon64x64.png .pakku/server-overrides/server-icon.png
 
       - name: Cache pakku downloads
         uses: actions/cache@v6

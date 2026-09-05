@@ -80,6 +80,11 @@ jobs:
         run: |
           # read only, so this also runs during a dry run and verifies that the API
           # key works and carries the backup permissions
+          # a dry run should diagnose everything rather than stop at the first problem,
+          # so panel trouble only downgrades to a warning there
+          lvl=error
+          if [ "$DRY_RUN" = 'true' ]; then lvl=warning; fi
+
           panel() {
             local out="$1" path="$2"
             local code
@@ -88,21 +93,28 @@ jobs:
               "$PANEL/api/client/servers/$SERVER_ID$path")
             case "$code" in
               200) return 0 ;;
-              401) echo "::error::Panel rejected the API key (401). PANEL_API_KEY has to be a"
-                   echo "::error::client key from the panel account page (API Credentials), not an"
-                   echo "::error::application or admin key from the admin area." ;;
-              403) echo "::error::The API key may not touch this server (403). Either it belongs to"
-                   echo "::error::another account, it lacks the backup permissions, or its allowed IP"
-                   echo "::error::list does not cover GitHub runners." ;;
-              404) echo "::error::No server '$SERVER_ID' at $PANEL (404)."
-                   echo "::error::Check the PANEL_URL and PANEL_SERVER_ID variables." ;;
-              *)   echo "::error::Panel returned HTTP $code for $path"
+              401) echo "::$lvl::Panel rejected the API key (401). On Pelican the full key is the"
+                   echo "::$lvl::16 character identifier plus a 32 character secret, and the secret"
+                   echo "::$lvl::is shown only once when the key is created. The identifier alone,"
+                   echo "::$lvl::which is what the key list displays, is not enough to authenticate." ;;
+              403) echo "::$lvl::The API key may not touch this server (403). Either it belongs to"
+                   echo "::$lvl::another account, it lacks the backup and control permissions, or its"
+                   echo "::$lvl::allowed IP list does not cover GitHub runners." ;;
+              404) echo "::$lvl::No server '$SERVER_ID' at $PANEL (404)."
+                   echo "::$lvl::Check the PANEL_URL and PANEL_SERVER_ID variables." ;;
+              *)   echo "::$lvl::Panel returned HTTP $code for $path"
                    cat "$out" ;;
             esac
             return 1
           }
 
-          panel server.json ''
+          if ! panel server.json ''; then
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "dry run: skipping the backup checks, continuing to verify the file sync"
+              exit 0
+            fi
+            exit 1
+          fi
           limit=$(jq -r '.attributes.feature_limits.backups // 0' server.json)
           echo "backup slots: $limit"
 
@@ -112,7 +124,10 @@ jobs:
             exit 1
           fi
 
-          panel backups.json /backups
+          if ! panel backups.json /backups; then
+            if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
+            exit 1
+          fi
           list=$(cat backups.json)
           # the panel counts running and successful backups against the limit,
           # failed ones keep occupying a slot until they are deleted
