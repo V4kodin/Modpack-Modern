@@ -141,47 +141,74 @@ jobs:
             if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
             exit 1
           fi
-          list=$(cat backups.json)
-
           echo "existing backups:"
-          echo "$list" | jq -r '.data[].attributes
+          jq -r '.data[].attributes
             | "  \(.created_at[:10])  \(if .is_locked then "locked  " else "unlocked" end)"
-              + "  \((.bytes / 1048576) | floor) MB  \(.name)"'
+              + "  \((.bytes / 1048576) | floor) MB  \(.name)"' backups.json
+
+          drop_backup() {
+            # the lock endpoint is a toggle, so locked backups are unlocked first,
+            # otherwise the panel refuses to delete them
+            if [ "$2" = 'true' ]; then
+              curl -sS -f -X POST -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+                "$PANEL/api/client/servers/$SERVER_ID/backups/$1/lock" > /dev/null
+            fi
+            curl -sS -f -X DELETE -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
+              "$PANEL/api/client/servers/$SERVER_ID/backups/$1"
+          }
+
+          # the pipeline holds exactly one slot: its previous pre-deploy backup is
+          # dropped before the new one is taken, so repeated deploys never pile up
+          dropped=0
+          while read -r uuid locked created name; do
+            [ -z "$uuid" ] && continue
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "dry run: would drop own backup $created $name"
+              continue
+            fi
+            echo "dropping own previous backup: $created $name"
+            drop_backup "$uuid" "$locked"
+            dropped=$((dropped + 1))
+          done < <(jq -r '[.data[].attributes
+            | select((.name // "") | startswith("pre-deploy "))]
+            | sort_by(.created_at) | .[]
+            | "\(.uuid) \(.is_locked) \(.created_at[:10]) \(.name)"' backups.json)
+
+          if [ "$dropped" -gt 0 ]; then
+            panel backups.json /backups || true
+          fi
+
           # the panel counts running and successful backups against the limit,
-          # failed ones keep occupying a slot until they are deleted
-          used=$(echo "$list" | jq '[.data[].attributes
-            | select(.completed_at == null or .is_successful == true)] | length')
-          echo "backup slots in use: $used"
+          # failed ones stop occupying a slot only once they are deleted
+          used=$(jq '[.data[].attributes
+            | select(.completed_at == null or .is_successful == true)] | length' backups.json)
+          echo "backup slots: $used of $limit in use"
 
           if [ "$used" -lt "$limit" ]; then
             exit 0
           fi
 
-          # only ever recycle backups this pipeline made, never a manual one, and
-          # spend the failed ones first because they hold no restorable data
-          victim=$(echo "$list" | jq -r '[.data[].attributes
-            | select(.is_locked == false)
-            | select(.completed_at != null)
-            | select((.name // "") | startswith("pre-deploy "))]
-            | sort_by(.is_successful, .created_at) | .[0].uuid // empty')
+          # still full, so fall back to the oldest backup that is not locked:
+          # locking is how the panel marks a backup as keep-forever
+          victim=$(jq -r '[.data[].attributes | select(.is_locked == false)]
+            | sort_by(.created_at) | .[0] | "\(.uuid // "") \(.created_at[:10]) \(.name)"' backups.json)
+          victim_uuid=${victim%% *}
 
-          if [ -z "$victim" ]; then
-            echo "::$lvl::All $limit backup slots are taken and every one of them was made by"
-            echo "::$lvl::hand, so this pipeline has nothing of its own to recycle. Free a single"
-            echo "::$lvl::slot in the panel once: from then on the pipeline reuses that slot and"
-            echo "::$lvl::never touches the rest. Lock the backups that must survive."
+          if [ -z "$victim_uuid" ] || [ "$victim_uuid" = 'null' ]; then
+            echo "::$lvl::All $limit backup slots are full and every backup is locked, so there is"
+            echo "::$lvl::nothing to recycle. Unlock or delete one in the panel, keeping in mind"
+            echo "::$lvl::that locked backups are the ones this pipeline will never remove."
             if [ "$DRY_RUN" = 'true' ]; then exit 0; fi
             exit 1
           fi
 
           if [ "$DRY_RUN" = 'true' ]; then
-            echo "dry run: would delete backup $victim to free a slot"
+            echo "dry run: would recycle the oldest unlocked backup ${victim#* }"
             exit 0
           fi
 
-          echo "deleting oldest pipeline backup $victim to free a slot"
-          curl -sS -f -X DELETE -H "Authorization: Bearer $API_KEY" -H 'Accept: application/json' \
-            "$PANEL/api/client/servers/$SERVER_ID/backups/$victim"
+          echo "recycling the oldest unlocked backup: ${victim#* }"
+          drop_backup "$victim_uuid" false
 
       - name: Install lftp
         if: ${{ !inputs.backup_only }}
@@ -279,8 +306,10 @@ jobs:
         run: |
           # runs after the shutdown, so the archive holds a quiet world with no
           # half-written region files, and it is a hard gate: no backup, no rollout
+          # locked, so neither the panel's backup schedule nor a stray click can drop
+          # the safety net; the next deploy unlocks it again before replacing it
           body=$(jq -n --arg name "pre-deploy $DEPLOY_TAG" --arg ignored "$BACKUP_IGNORED" \
-            '{name: $name, ignored: $ignored, is_locked: false}')
+            '{name: $name, ignored: $ignored, is_locked: true}')
 
           created=$(curl -sS -X POST \
             -H "Authorization: Bearer $API_KEY" \
@@ -388,7 +417,8 @@ jobs:
         run: |
           {
             if [ -n "$BACKUP_INFO" ]; then
-              echo "Бэкап перед раскаткой снят: \`$BACKUP_INFO\`."
+              echo "Бэкап перед раскаткой снят и залочен: \`$BACKUP_INFO\`."
+              echo "Он держит один слот и будет заменён следующей раскаткой."
               echo ""
             fi
 
