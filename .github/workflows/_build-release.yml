@@ -224,6 +224,9 @@ jobs:
             echo "\`https://github.com/$REPO/releases/latest/download/${CLIENTPACK_NAME}\`"
             echo ""
             echo "Дальше обновления приходят сами через AutoModpack при заходе на сервер."
+            echo ""
+            echo "При первом подключении AutoModpack один раз запросит полный fingerprint сертификата."
+            echo "Администратор получает его командой \`/automodpack host fingerprint\` в консоли сервера."
           } > notes.md
 
           args=(--repo "$REPO" --title "$VERSION" --notes-file notes.md --target "$GITHUB_SHA")
