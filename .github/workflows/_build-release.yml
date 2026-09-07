@@ -126,11 +126,63 @@ jobs:
           # clientextra becomes AutoModpack's host-modpack, so it has to hold the
           # complete client-side file set: AutoModpack cannot detect mod sides on
           # Forge, so we go by pakku's own side data instead of letting it guess
-          {
-            jq -r '.projects[] | select(.side == "SERVER") | .files[].file_name' pakku-lock.json
-            # AutoModpack updates its own jar outside the modpack
-            jq -r '.projects[] | select(.slug.modrinth == "automodpack") | .files[].file_name' pakku-lock.json
-          } | sort -u > work/excluded-mods.txt
+          # A project marked SERVER can still be a mandatory library for a BOTH or
+          # CLIENT project (SmartBrainLib is required by Fowl Play), so retain the
+          # transitive dependency closure instead of blindly dropping every SERVER.
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          projects = json.loads(Path("pakku-lock.json").read_text())["projects"]
+          by_project_id = {}
+          for index, project in enumerate(projects):
+              by_project_id[project["pakku_id"]] = index
+              for project_id in project.get("id", {}).values():
+                  by_project_id[str(project_id)] = index
+
+          included = {
+              index
+              for index, project in enumerate(projects)
+              if project.get("side") != "SERVER"
+          }
+          pending = list(included)
+          while pending:
+              project = projects[pending.pop()]
+              dependencies = {
+                  str(dependency)
+                  for file in project["files"]
+                  for dependency in file.get("required_dependencies", [])
+              }
+              for dependency in dependencies:
+                  index = by_project_id.get(dependency)
+                  if index is not None and index not in included:
+                      included.add(index)
+                      pending.append(index)
+
+          excluded = {
+              file["file_name"]
+              for index, project in enumerate(projects)
+              if project.get("side") == "SERVER" and index not in included
+              for file in project["files"]
+          }
+          # AutoModpack updates its own jar outside the managed modpack.
+          excluded.update(
+              file["file_name"]
+              for project in projects
+              if project.get("slug", {}).get("modrinth") == "automodpack"
+              for file in project["files"]
+          )
+
+          Path("work/excluded-mods.txt").write_text(
+              "".join(f"{name}\n" for name in sorted(excluded))
+          )
+          retained = [
+              next(iter(project["name"].values()))
+              for index, project in enumerate(projects)
+              if project.get("side") == "SERVER" and index in included
+          ]
+          print("Server-marked client dependencies retained:", retained)
+          PY
 
           find ./mods -maxdepth 1 -name '*.jar' -printf '%f\n' | sort > work/all-mods.txt
           comm -23 work/all-mods.txt work/excluded-mods.txt > work/client-mods.txt
