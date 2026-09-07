@@ -3012,32 +3012,8 @@
             },
             "files": [
                 {
-                    "type": "curseforge",
-                    "file_name": "ComplementaryUnbound_r5.8.1.zip",
-                    "mc_versions": [
-                        "1.20.2",
-                        "1.20.5",
-                        "1.20.1",
-                        "1.20",
-                        "1.20.6",
-                        "1.20.4",
-                        "1.20.3"
-                    ],
-                    "release_type": "release",
-                    "url": "https://edge.forgecdn.net/files/8123/288/ComplementaryUnbound_r5.8.1.zip",
-                    "id": "8123288",
-                    "parent_id": "385587",
-                    "hashes": {
-                        "sha1": "af656a33be2cbd217ea08986ad2cdd76f6bbfe1c",
-                        "md5": "0a3553109dbe689a9f76d1aedc8f50c6"
-                    },
-                    "required_dependencies": [],
-                    "size": 546928,
-                    "date_published": "2026-05-21T14:53:22.100Z"
-                },
-                {
                     "type": "modrinth",
-                    "file_name": "ComplementaryUnbound_r5.8.1.zip",
+                    "file_name": "ComplementaryUnbound_r5.9.zip",
                     "mc_versions": [
                         "1.7.10",
                         "1.8",
@@ -3120,16 +3096,40 @@
                         "optifine"
                     ],
                     "release_type": "release",
-                    "url": "https://cdn.modrinth.com/data/R6NEzAwj/versions/VMHXIk50/ComplementaryUnbound_r5.8.1.zip",
-                    "id": "VMHXIk50",
+                    "url": "https://cdn.modrinth.com/data/R6NEzAwj/versions/w6dISYOd/ComplementaryUnbound_r5.9.zip",
+                    "id": "w6dISYOd",
                     "parent_id": "R6NEzAwj",
                     "hashes": {
-                        "sha512": "9098dd9e0c18b80f7aba2839cea33ce9a614d97665bbfcac87ccce6e4771667c41602d99088852cb1642ccab20b2ceff9b98af8f2e795bd0d3b90b7c9cbab914",
-                        "sha1": "af656a33be2cbd217ea08986ad2cdd76f6bbfe1c"
+                        "sha512": "2485490c52c4bf9fa35e015a926d4f7863c2b74f4d8f82fa93432490a361f5d6a36070ee5b3033fa9d90c51a768823a688d2660fb2a736366ae37541438d798e",
+                        "sha1": "7d0e7113631d17f2d8ee0f45d7dbd5daed64e657"
                     },
                     "required_dependencies": [],
-                    "size": 546928,
-                    "date_published": "2026-05-21T14:50:33.267877Z"
+                    "size": 552453,
+                    "date_published": "2026-09-02T10:49:24.206713Z"
+                },
+                {
+                    "type": "curseforge",
+                    "file_name": "ComplementaryUnbound_r5.9.zip",
+                    "mc_versions": [
+                        "1.20.2",
+                        "1.20.5",
+                        "1.20.1",
+                        "1.20",
+                        "1.20.6",
+                        "1.20.4",
+                        "1.20.3"
+                    ],
+                    "release_type": "release",
+                    "url": "https://edge.forgecdn.net/files/8791/767/ComplementaryUnbound_r5.9.zip",
+                    "id": "8791767",
+                    "parent_id": "385587",
+                    "hashes": {
+                        "sha1": "7d0e7113631d17f2d8ee0f45d7dbd5daed64e657",
+                        "md5": "566f4c03252a950e8b74bede9e684827"
+                    },
+                    "required_dependencies": [],
+                    "size": 552453,
+                    "date_published": "2026-09-02T10:52:15.000Z"
                 }
             ]
         },
