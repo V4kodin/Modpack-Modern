@@ -192,6 +192,89 @@ jobs:
             [ -n "$jar" ] && cp "mods/$jar" work/clientextra/mods/
           done < work/client-mods.txt
 
+          # Pakku's side metadata can be wrong even when its project dependency
+          # metadata looks complete. Inspect the actual Forge jars, including
+          # JarJar libraries, and reject a client set with a missing mandatory
+          # client dependency before publishing it.
+          python3 <<'PY'
+          import io
+          import tomllib
+          import zipfile
+          from pathlib import Path
+
+          provided = set()
+          required = []
+          parse_errors = []
+
+          def inspect_jar(data, source, depth=0):
+              try:
+                  with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                      if "META-INF/mods.toml" in archive.namelist():
+                          config = tomllib.loads(
+                              archive.read("META-INF/mods.toml").decode("utf-8-sig")
+                          )
+                          provided.update(
+                              str(mod["modId"])
+                              for mod in config.get("mods", [])
+                              if mod.get("modId")
+                          )
+                          for owner, dependencies in config.get("dependencies", {}).items():
+                              for dependency in dependencies:
+                                  side = str(dependency.get("side", "BOTH")).upper()
+                                  if dependency.get("mandatory") is True and side in {
+                                      "BOTH",
+                                      "CLIENT",
+                                  }:
+                                      required.append(
+                                          (
+                                              owner,
+                                              str(dependency.get("modId", "")),
+                                              source,
+                                          )
+                                      )
+
+                      if depth < 2:
+                          for name in archive.namelist():
+                              if (
+                                  name.upper().startswith("META-INF/")
+                                  and name.lower().endswith(".jar")
+                              ):
+                                  inspect_jar(
+                                      archive.read(name),
+                                      f"{source}!{name}",
+                                      depth + 1,
+                                  )
+              except Exception as error:
+                  parse_errors.append(f"{source}: {type(error).__name__}: {error}")
+
+          for path in Path("work/clientextra/mods").glob("*.jar"):
+              inspect_jar(path.read_bytes(), path.name)
+
+          if parse_errors:
+              print("::error::Could not inspect client jar metadata:")
+              print(*parse_errors, sep="\n  ")
+              raise SystemExit(1)
+
+          built_in = {"minecraft", "forge", "java", "mixin", "neoforge"}
+          missing = sorted(
+              {
+                  (owner, dependency, source)
+                  for owner, dependency, source in required
+                  if dependency and dependency not in provided | built_in
+              }
+          )
+          if missing:
+              print("::error::Mandatory client mod dependencies are missing:")
+              for owner, dependency, source in missing:
+                  print(f"  {owner} requires {dependency} ({source})")
+              raise SystemExit(1)
+
+          print(
+              f"Client dependency metadata verified: {len(provided)} mod IDs, "
+              f"{len(required)} mandatory dependency declarations"
+          )
+          PY
+
           # resource packs and shaders are pakku projects rather than overrides, so
           # they are not part of the exported overrides and come from the fetch output
           for dir in resourcepacks shaderpacks; do
