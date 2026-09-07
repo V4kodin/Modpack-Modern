@@ -46,7 +46,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Repository: $Repo" -ForegroundColor Cyan
 Write-Host ''
 
-$publishClient = Read-YesNo 'Publish a client release (.mrpack)'
+$publishClient = Read-YesNo 'Publish a client installer (CurseForge ZIP)'
 $deployServer = Read-YesNo 'Deploy to the game server'
 
 $dryRun = $false

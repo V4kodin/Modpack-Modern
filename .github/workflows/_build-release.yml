@@ -17,7 +17,7 @@ permissions:
 
 env:
   # fixed asset names, so releases/latest/download/<name> stays a permanent link
-  MRPACK_NAME: TerraFirmaGreg-oljk.mrpack
+  CLIENTPACK_NAME: TerraFirmaGreg-oljk-curseforge.zip
   SERVERPACK_NAME: TerraFirmaGreg-oljk-serverpack.zip
   CLIENTEXTRA_NAME: TerraFirmaGreg-oljk-clientextra.zip
 
@@ -121,7 +121,7 @@ jobs:
           mkdir -p out work/clientextra/mods work/cfpack
 
           cp build/serverpack/*.zip "out/${SERVERPACK_NAME}"
-          cp build/modrinth/*.mrpack "out/${MRPACK_NAME}"
+          cp build/curseforge/*.zip "out/${CLIENTPACK_NAME}"
 
           # clientextra becomes AutoModpack's host-modpack, so it has to hold the
           # complete client-side file set: AutoModpack cannot detect mod sides on
@@ -147,11 +147,62 @@ jobs:
           done
 
           # client flavour of config/defaultconfigs/kubejs/tacz, as pakku merged it
-          unzip -q build/curseforge/*.zip -d work/cfpack
+          unzip -q "out/${CLIENTPACK_NAME}" -d work/cfpack
           if [ ! -d work/cfpack/overrides ]; then
             echo "::error::CurseForge export contains no overrides folder" && exit 1
           fi
           cp -r work/cfpack/overrides/. work/clientextra/
+
+          # A Modrinth export can silently choose an older Modrinth file than the
+          # CurseForge file fetched for the server, and cannot carry projects whose
+          # authors disabled third-party redistribution. The CurseForge installer is
+          # therefore canonical. Refuse to release it unless it installs exactly the
+          # same jars AutoModpack will serve (plus AutoModpack itself as bootstrap).
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          lock = json.loads(Path("pakku-lock.json").read_text())
+          manifest = json.loads(Path("work/cfpack/manifest.json").read_text())
+
+          by_cf_file_id = {}
+          for project in lock["projects"]:
+              for file in project["files"]:
+                  if file["type"] == "curseforge":
+                      by_cf_file_id[str(file["id"])] = file["file_name"]
+
+          provided = set()
+          unresolved = []
+          for file in manifest["files"]:
+              file_id = str(file["fileID"])
+              if file_id not in by_cf_file_id:
+                  unresolved.append(file_id)
+              else:
+                  provided.add(by_cf_file_id[file_id])
+
+          provided.update(path.name for path in Path("work/cfpack").rglob("*.jar"))
+          expected = set(Path("work/client-mods.txt").read_text().splitlines())
+          expected.update(
+              file["file_name"]
+              for project in lock["projects"]
+              if project.get("slug", {}).get("modrinth") == "automodpack"
+              for file in project["files"]
+          )
+
+          missing = sorted(expected - provided, key=str.casefold)
+          extra = sorted(provided - expected, key=str.casefold)
+          if unresolved or missing or extra:
+              print("::error::CurseForge installer and AutoModpack file sets differ")
+              if unresolved:
+                  print("Unresolved CurseForge file IDs:", *unresolved, sep="\n  ")
+              if missing:
+                  print("Missing from installer:", *missing, sep="\n  ")
+              if extra:
+                  print("Unexpected in installer:", *extra, sep="\n  ")
+              raise SystemExit(1)
+
+          print(f"Client installer parity verified: {len(expected)} mod jars")
+          PY
 
           ( cd work/clientextra && zip -qr "../../out/${CLIENTEXTRA_NAME}" . )
           ls -lh out/
@@ -170,16 +221,19 @@ jobs:
             echo ""
             echo "Постоянная ссылка на последнюю версию, вставить в Prism Launcher через Add Instance -> Import:"
             echo ""
-            echo "\`https://github.com/$REPO/releases/latest/download/${MRPACK_NAME}\`"
+            echo "\`https://github.com/$REPO/releases/latest/download/${CLIENTPACK_NAME}\`"
             echo ""
             echo "Дальше обновления приходят сами через AutoModpack при заходе на сервер."
+            echo ""
+            echo "При первом подключении AutoModpack один раз запросит полный fingerprint сертификата."
+            echo "Администратор получает его командой \`/automodpack host fingerprint\` в консоли сервера."
           } > notes.md
 
           args=(--repo "$REPO" --title "$VERSION" --notes-file notes.md --target "$GITHUB_SHA")
           if [ '${{ inputs.publish_client }}' = 'true' ]; then
             # full release: the permanent client link resolves to this one
             gh release create "$VERSION" "${args[@]}" \
-              "out/${SERVERPACK_NAME}" "out/${MRPACK_NAME}" "out/${CLIENTEXTRA_NAME}"
+              "out/${SERVERPACK_NAME}" "out/${CLIENTPACK_NAME}" "out/${CLIENTEXTRA_NAME}"
           else
             # server-only: marked prerelease so releases/latest keeps pointing at the
             # last release that actually carries the client assets
@@ -196,9 +250,9 @@ jobs:
             echo "Релиз [\`$VERSION\`](https://github.com/$REPO/releases/tag/$VERSION) собран."
             if [ '${{ inputs.publish_client }}' = 'true' ]; then
               echo ""
-              echo "Ссылка для клиентов: \`https://github.com/$REPO/releases/latest/download/${MRPACK_NAME}\`"
+              echo "Ссылка для клиентов: \`https://github.com/$REPO/releases/latest/download/${CLIENTPACK_NAME}\`"
             else
               echo ""
-              echo "Помечен как prerelease, клиентский \`.mrpack\` не публиковался."
+              echo "Помечен как prerelease, клиентский CurseForge ZIP не публиковался."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
