@@ -25,7 +25,7 @@
   "bindPort": -1,
   "addressToSend": "",
   "portToSend": -1,
-  "disableInternalTLS": false,
+  "disableInternalTLS": true,
   "requireMagicPackets": false,
   "updateIpsOnEveryStart": false,
   "bandwidthLimit": 0,
