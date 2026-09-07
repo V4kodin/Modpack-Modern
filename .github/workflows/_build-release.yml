@@ -151,36 +151,27 @@ jobs:
           if [ ! -d work/cfpack/overrides ]; then
             echo "::error::CurseForge export contains no overrides folder" && exit 1
           fi
-          cp -r work/cfpack/overrides/. work/clientextra/
 
-          # A Modrinth export can silently choose an older Modrinth file than the
-          # CurseForge file fetched for the server, and cannot carry projects whose
-          # authors disabled third-party redistribution. The CurseForge installer is
-          # therefore canonical. Refuse to release it unless it installs exactly the
-          # same jars AutoModpack will serve (plus AutoModpack itself as bootstrap).
+          # Pakku can choose different versions for the same project on CurseForge
+          # and Modrinth. Normalize the CurseForge installer to the exact jars fetched
+          # for the server: retain exact CurseForge references (including restricted
+          # projects), replace stale references with redistributable fetched jars,
+          # and remove server-only projects. AutoModpack itself is added as bootstrap.
           python3 <<'PY'
           import json
+          import shutil
           from pathlib import Path
 
           lock = json.loads(Path("pakku-lock.json").read_text())
-          manifest = json.loads(Path("work/cfpack/manifest.json").read_text())
+          manifest_file = Path("work/cfpack/manifest.json")
+          manifest = json.loads(manifest_file.read_text())
+          known_hosts_file = Path(
+              "work/cfpack/overrides/automodpack/.private/automodpack-known-hosts.json"
+          )
+          if not known_hosts_file.is_file():
+              print("::error::CurseForge installer is missing the pinned AutoModpack certificate")
+              raise SystemExit(1)
 
-          by_cf_file_id = {}
-          for project in lock["projects"]:
-              for file in project["files"]:
-                  if file["type"] == "curseforge":
-                      by_cf_file_id[str(file["id"])] = file["file_name"]
-
-          provided = set()
-          unresolved = []
-          for file in manifest["files"]:
-              file_id = str(file["fileID"])
-              if file_id not in by_cf_file_id:
-                  unresolved.append(file_id)
-              else:
-                  provided.add(by_cf_file_id[file_id])
-
-          provided.update(path.name for path in Path("work/cfpack").rglob("*.jar"))
           expected = set(Path("work/client-mods.txt").read_text().splitlines())
           expected.update(
               file["file_name"]
@@ -189,21 +180,79 @@ jobs:
               for file in project["files"]
           )
 
+          by_cf_file_id = {}
+          project_by_filename = {}
+          for project in lock["projects"]:
+              for file in project["files"]:
+                  project_by_filename[file["file_name"]] = project
+                  if file["type"] == "curseforge":
+                      by_cf_file_id[str(file["id"])] = (file["file_name"], project)
+
+          provided = set()
+          unresolved = []
+          normalized_manifest_files = []
+          for manifest_entry in manifest["files"]:
+              file_id = str(manifest_entry["fileID"])
+              if file_id not in by_cf_file_id:
+                  unresolved.append(file_id)
+                  normalized_manifest_files.append(manifest_entry)
+                  continue
+
+              file_name, project = by_cf_file_id[file_id]
+              if project["type"] != "MOD":
+                  normalized_manifest_files.append(manifest_entry)
+              elif file_name in expected:
+                  normalized_manifest_files.append(manifest_entry)
+                  provided.add(file_name)
+              else:
+                  print(f"Dropping non-client or stale CurseForge file: {file_name}")
+
+          if unresolved:
+              print("::error::Could not resolve CurseForge file IDs:", *unresolved, sep="\n  ")
+              raise SystemExit(1)
+
+          manifest["files"] = normalized_manifest_files
+          manifest_file.write_text(json.dumps(manifest, indent=2) + "\n")
+
+          override_mods = Path("work/cfpack/overrides/mods")
+          override_mods.mkdir(parents=True, exist_ok=True)
+          for path in Path("work/cfpack").rglob("*.jar"):
+              if path.name in expected:
+                  provided.add(path.name)
+              else:
+                  print(f"Dropping non-client or stale embedded jar: {path.name}")
+                  path.unlink()
+
           missing = sorted(expected - provided, key=str.casefold)
-          extra = sorted(provided - expected, key=str.casefold)
-          if unresolved or missing or extra:
-              print("::error::CurseForge installer and AutoModpack file sets differ")
-              if unresolved:
-                  print("Unresolved CurseForge file IDs:", *unresolved, sep="\n  ")
-              if missing:
-                  print("Missing from installer:", *missing, sep="\n  ")
-              if extra:
-                  print("Unexpected in installer:", *extra, sep="\n  ")
+          restricted = [
+              name
+              for name in missing
+              if project_by_filename[name].get("redistributable") is False
+          ]
+          if restricted:
+              print("::error::Restricted client mods are absent from the CurseForge manifest:")
+              print(*restricted, sep="\n  ")
+              raise SystemExit(1)
+
+          for name in missing:
+              source = Path("mods") / name
+              if not source.is_file():
+                  print(f"::error::Fetched client jar is missing: {name}")
+                  raise SystemExit(1)
+              print(f"Embedding cross-platform client version: {name}")
+              shutil.copy2(source, override_mods / name)
+              provided.add(name)
+
+          if provided != expected:
+              print("::error::Normalized installer and AutoModpack file sets still differ")
               raise SystemExit(1)
 
           print(f"Client installer parity verified: {len(expected)} mod jars")
           PY
 
+          rm "out/${CLIENTPACK_NAME}"
+          ( cd work/cfpack && zip -qr "../../out/${CLIENTPACK_NAME}" . )
+          cp -r work/cfpack/overrides/. work/clientextra/
           ( cd work/clientextra && zip -qr "../../out/${CLIENTEXTRA_NAME}" . )
           ls -lh out/
 
@@ -224,9 +273,6 @@ jobs:
             echo "\`https://github.com/$REPO/releases/latest/download/${CLIENTPACK_NAME}\`"
             echo ""
             echo "Дальше обновления приходят сами через AutoModpack при заходе на сервер."
-            echo ""
-            echo "При первом подключении AutoModpack один раз запросит полный fingerprint сертификата."
-            echo "Администратор получает его командой \`/automodpack host fingerprint\` в консоли сервера."
           } > notes.md
 
           args=(--repo "$REPO" --title "$VERSION" --notes-file notes.md --target "$GITHUB_SHA")
