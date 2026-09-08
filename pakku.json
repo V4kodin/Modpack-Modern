@@ -68,6 +68,9 @@
         "create-liquid-fuel": {
             "side": "BOTH"
         },
+        "tfc-ruins": {
+            "side": "BOTH"
+        },
         "dynamic-darkness": {
             "side": "CLIENT"
         },

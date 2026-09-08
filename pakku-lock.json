@@ -15511,7 +15511,7 @@
                 "64uacGcEw697jVGs"
             ],
             "type": "MOD",
-            "side": "SERVER",
+            "side": "BOTH",
             "slug": {
                 "curseforge": "tfc-ruins",
                 "modrinth": "tfc-ruins"
