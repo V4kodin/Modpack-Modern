@@ -88,6 +88,81 @@ jobs:
           # upstream ships the 32x32 icon here, which is why the icon never worked
           cp -f config/fancymenu/assets/icons/icon64x64.png .pakku/server-overrides/server-icon.png
 
+      - name: Pin the AutoModpack certificate
+        env:
+          SFTP_HOST: ${{ vars.SFTP_HOST }}
+          SFTP_PORT: ${{ vars.SFTP_PORT }}
+          SFTP_USER: ${{ vars.SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          GAME_ADDRESS: ${{ vars.GAME_ADDRESS }}
+        run: |
+          # AutoModpack trusts a self-signed certificate per host name and otherwise
+          # asks the player to confirm a fingerprint by hand. The server sends an empty
+          # host address, so clients reach it under whatever the SRV record resolves to
+          # rather than the address they typed: pin the live certificate for every alias
+          # a player can end up on. The committed file is only a fallback.
+          if [ -z "$SFTP_PASSWORD" ] || [ -z "$GAME_ADDRESS" ]; then
+            echo "::warning::No server credentials or GAME_ADDRESS, keeping the committed certificate pin"
+            exit 0
+          fi
+
+          sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+          if ! lftp -u "$SFTP_USER,$SFTP_PASSWORD" "sftp://$SFTP_HOST:$SFTP_PORT" -e \
+              'set sftp:auto-confirm yes; get /automodpack/.private/cert.crt -o cert.crt; bye'; then
+            echo "::warning::Could not download the server certificate, keeping the committed pin"
+            exit 0
+          fi
+
+          python3 <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          address = os.environ["GAME_ADDRESS"]
+          pem = Path("cert.crt").read_text()
+          der = base64.b64decode(
+              "".join(line for line in pem.splitlines() if "CERTIFICATE" not in line)
+          )
+          fingerprint = hashlib.sha256(der).hexdigest()
+
+          record_types = {"A": 1, "SRV": 33}
+
+          def resolve(name, kind):
+              query = urllib.parse.urlencode({"name": name, "type": kind})
+              with urllib.request.urlopen(
+                  f"https://dns.google/resolve?{query}", timeout=15
+              ) as response:
+                  payload = json.load(response)
+              return [
+                  answer["data"]
+                  for answer in payload.get("Answer", [])
+                  if answer.get("type") == record_types[kind]
+              ]
+
+          hosts = {address}
+          for record in resolve(f"_minecraft._tcp.{address}", "SRV"):
+              hosts.add(record.split()[-1].rstrip("."))
+          for host in sorted(hosts):
+              hosts.update(resolve(host, "A"))
+
+          Path(
+              ".pakku/client-overrides/automodpack/.private/automodpack-known-hosts.json"
+          ).write_text(
+              json.dumps(
+                  {"hosts": {host: fingerprint for host in sorted(hosts)}}, indent=2
+              )
+              + "\n"
+          )
+          print(f"Pinned {fingerprint} for: {', '.join(sorted(hosts))}")
+          PY
+
+          rm -f cert.crt
+
       - name: Cache pakku downloads
         uses: actions/cache@v6
         with:
